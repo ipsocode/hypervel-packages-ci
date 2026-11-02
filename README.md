@@ -23,6 +23,7 @@ Each folder is named after the package workflow it serves, in that workflow's sp
 | `initial/conventions` | Checks the calling checkout against the packages' conventions. | `contents: read` |
 | `tests/install` | Installs a package's dependencies with Composer, with Composer's and the tools' caches (`tests/.cache`). `restore-only: 'true'` restores Composer's downloads without saving them and skips `tests/.cache`. | `contents: read` |
 | `tests/suite` | Runs php-cs-fixer, PHPStan and the test suite, under the coverage gate when `min-coverage` is set. `upload-coverage: 'false'` skips the clover artifact. | `contents: read` |
+| `tests/fix` | Labels a failed pull request `claude-fix` so the PR-fix routine starts, or `needs-human` after three earlier passes. Call it from a job that runs only on a failure, for a same-repository, non-draft pull request on a `bug-fixes/`, `feature/` or `routine/` branch. `label-token` sets the label as ipsocode; empty falls back to the workflow token, which starts no routine. | `issues: write`, `pull-requests: write` |
 | `branches/feature` | Creates a feature issue's linked `feature/<n>-<slug>` branch and writes its `Base branch:` line. | `contents: write`, `issues: write` |
 | `publish/plan` | Decides the version, the tag and whether anything ships. | `contents: read`, `pull-requests: read` |
 | `publish/release` | Writes the release notes, tags the planned commit and publishes the release, in that order. | `contents: write`, `pull-requests: read` |
