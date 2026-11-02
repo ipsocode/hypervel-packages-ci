@@ -4,6 +4,8 @@
 # The CI image differs on purpose, and so does the Composer step (a package has no lockfile).
 # The calling package's testbench.yaml sets OTEL_SDK_DISABLED: true; nothing here does. phpunit.xml cannot:
 # PHPUnit turns value="true" into "1", which the OpenTelemetry SDK rejects and reads as false.
+# Each job has its own concurrency group, per pull request (or ref) and PHP version, so a new push
+# cancels the run it supersedes everywhere but on main. The caller's workflow needs none.
 name: databases
 
 on:
@@ -25,6 +27,10 @@ jobs:
   mysql_57:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
+    concurrency:
+      group: databases-mysql_57-${{ github.event.pull_request.number || github.ref }}-${{ matrix.php }}
+      cancel-in-progress: ${{ github.ref_name != 'main' }}
 
     services:
       mysql:
@@ -74,6 +80,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    concurrency:
+      group: databases-mysql_84-${{ github.event.pull_request.number || github.ref }}-${{ matrix.php }}
+      cancel-in-progress: ${{ github.ref_name != 'main' }}
+
     services:
       mysql:
         image: mysql:8.4
@@ -121,6 +131,10 @@ jobs:
   mysql_97:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
+    concurrency:
+      group: databases-mysql_97-${{ github.event.pull_request.number || github.ref }}-${{ matrix.php }}
+      cancel-in-progress: ${{ github.ref_name != 'main' }}
 
     services:
       mysql:
@@ -170,6 +184,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    concurrency:
+      group: databases-mariadb_10-${{ github.event.pull_request.number || github.ref }}-${{ matrix.php }}
+      cancel-in-progress: ${{ github.ref_name != 'main' }}
+
     services:
       mariadb:
         image: mariadb:10
@@ -216,6 +234,10 @@ jobs:
   mariadb_11:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
+    concurrency:
+      group: databases-mariadb_11-${{ github.event.pull_request.number || github.ref }}-${{ matrix.php }}
+      cancel-in-progress: ${{ github.ref_name != 'main' }}
 
     services:
       mariadb:
@@ -264,6 +286,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    concurrency:
+      group: databases-mariadb_123-${{ github.event.pull_request.number || github.ref }}-${{ matrix.php }}
+      cancel-in-progress: ${{ github.ref_name != 'main' }}
+
     services:
       mariadb:
         image: mariadb:12.3
@@ -310,6 +336,10 @@ jobs:
   pgsql_17:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
+    concurrency:
+      group: databases-pgsql_17-${{ github.event.pull_request.number || github.ref }}-${{ matrix.php }}
+      cancel-in-progress: ${{ github.ref_name != 'main' }}
 
     services:
       postgres:
@@ -358,6 +388,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    concurrency:
+      group: databases-pgsql_18-${{ github.event.pull_request.number || github.ref }}-${{ matrix.php }}
+      cancel-in-progress: ${{ github.ref_name != 'main' }}
+
     services:
       postgres:
         image: pgvector/pgvector:0.8.7-pg18
@@ -404,6 +438,10 @@ jobs:
   sqlite:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
+    concurrency:
+      group: databases-sqlite-${{ github.event.pull_request.number || github.ref }}-${{ matrix.php }}
+      cancel-in-progress: ${{ github.ref_name != 'main' }}
 
     container:
       image: ghcr.io/ipsocode/hypervel/ci-alpine:${{ matrix.php }}-latest
