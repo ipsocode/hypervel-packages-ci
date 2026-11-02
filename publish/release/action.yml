@@ -59,6 +59,11 @@ runs:
         if [ -z "${HIGHLIGHTS}" ]; then
           dir=$(mktemp -d)
           : > "${dir}/0"; : > "${dir}/1"; : > "${dir}/2"
+          merged=$(gh pr list --repo "${GITHUB_REPOSITORY}" --state merged --base main --limit 200 \
+                     --json number,mergeCommit,labels --jq '.[] | "\(.mergeCommit.oid)\t\(.number)\t\(.labels | map(.name) | join(","))"') || {
+            echo "::error::Could not list the merged pull requests for the release notes. The token needs pull-requests: read." >&2
+            exit 1
+          }
           while IFS=$'\t' read -r merge_sha number labels; do
             [ -n "${merge_sha}" ] || continue
             git cat-file -e "${merge_sha}^{commit}" 2> /dev/null || continue
@@ -77,8 +82,7 @@ runs:
               *) rank=2 ;;
             esac
             printf '%s\n' "${note}" >> "${dir}/${rank}"
-          done < <(gh pr list --repo "${GITHUB_REPOSITORY}" --state merged --base main --limit 200 \
-                     --json number,mergeCommit,labels --jq '.[] | "\(.mergeCommit.oid)\t\(.number)\t\(.labels | map(.name) | join(","))"')
+          done <<< "${merged}"
           HIGHLIGHTS=$(cat "${dir}/0" "${dir}/1" "${dir}/2")
         fi
 

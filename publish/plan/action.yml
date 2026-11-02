@@ -54,7 +54,12 @@ runs:
         }
 
         labelled_since() {
-          local label="$1" previous="$2" sha="$3" found='' merge_sha number
+          local label="$1" previous="$2" sha="$3" found='' merge_sha number merged
+          merged=$(gh pr list --repo "${GITHUB_REPOSITORY}" --state merged --base main --label "${label}" \
+                     --limit 200 --json number,mergeCommit --jq '.[] | "\(.mergeCommit.oid) \(.number)"') || {
+            echo "::error::Could not list the merged pull requests labelled ${label}. The token needs pull-requests: read; a version planned without the list could be a patch where a minor is due." >&2
+            exit 1
+          }
           while read -r merge_sha number; do
             [ -n "${merge_sha}" ] || continue
             git cat-file -e "${merge_sha}^{commit}" 2> /dev/null || continue
@@ -63,8 +68,7 @@ runs:
               continue
             fi
             found="${found:+${found} }#${number}"
-          done < <(gh pr list --repo "${GITHUB_REPOSITORY}" --state merged --base main --label "${label}" \
-                     --limit 200 --json number,mergeCommit --jq '.[] | "\(.mergeCommit.oid) \(.number)"')
+          done <<< "${merged}"
           echo "${found}"
         }
 
