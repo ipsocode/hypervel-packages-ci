@@ -1,0 +1,76 @@
+name: Ask for a fix
+description: Label a failed pull request claude-fix so the PR-fix routine starts, or needs-human after three earlier passes. Call it from a job that runs only on a failure, for a pull request from the same repository on a bug-fixes/, feature/ or routine/ branch that is not a draft.
+inputs:
+  number:
+    description: The pull request number.
+    default: ${{ github.event.pull_request.number }}
+  head-sha:
+    description: The head commit of the run being judged. A run for an older head decides nothing.
+    default: ${{ github.event.pull_request.head.sha }}
+  head-ref:
+    description: The pull request's head branch.
+    default: ${{ github.head_ref }}
+  repository:
+    default: ${{ github.repository }}
+  token:
+    description: Token that reads the pull request. Needs issues and pull-requests write.
+    default: ${{ github.token }}
+  label-token:
+    description: Token that sets the label and the assignee, as ipsocode. A label set with the workflow token starts no routine. Empty falls back to the workflow token, with a warning.
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Label the pull request claude-fix, or needs-human after three passes
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        LABEL_TOKEN: ${{ inputs.label-token || inputs.token }}
+        HAS_TRAIN_TOKEN: ${{ inputs.label-token != '' }}
+        REPO: ${{ inputs.repository }}
+        NUMBER: ${{ inputs.number }}
+        HEAD_SHA: ${{ inputs.head-sha }}
+        HEAD_REF: ${{ inputs.head-ref }}
+      run: |
+        set -euo pipefail
+
+        if [ "${HAS_TRAIN_TOKEN}" != true ]; then
+          echo "::warning::The TRAIN_TOKEN secret is not set; labelling with the workflow's token."
+        fi
+
+        pr=$(gh api "repos/${REPO}/pulls/${NUMBER}")
+
+        if [ "$(jq -r '.state' <<< "${pr}")" != open ]; then
+          echo "#${NUMBER} is no longer open."
+          exit 0
+        fi
+        if [ "$(jq -r '.head.sha' <<< "${pr}")" != "${HEAD_SHA}" ]; then
+          echo "#${NUMBER} has moved past ${HEAD_SHA}; a newer run decides."
+          exit 0
+        fi
+        if [ "$(jq -r '.draft' <<< "${pr}")" = true ]; then
+          echo "#${NUMBER} is a draft; its author runs the gate before each commit."
+          exit 0
+        fi
+        if jq -e '.labels | map(.name) | any(. == "claude-fix" or . == "needs-human")' <<< "${pr}" > /dev/null; then
+          echo "#${NUMBER} already carries claude-fix or needs-human."
+          exit 0
+        fi
+
+        passes=$(gh api --paginate "repos/${REPO}/issues/${NUMBER}/events?per_page=100" \
+          --jq '.[] | select(.event == "labeled" and .label.name == "claude-fix") | .id' | wc -l | tr -d ' ')
+
+        if [ "${passes}" -ge 3 ]; then
+          label=needs-human
+          body="The checks failed on ${HEAD_SHA:0:7} after ${passes} fix passes, so this is labelled needs-human instead of claude-fix."
+        else
+          label=claude-fix
+          body="The checks failed on ${HEAD_SHA:0:7}: labelled claude-fix (fix pass $((passes + 1)) of 3)."
+        fi
+
+        if [ "${label}" = claude-fix ] && [[ "${HEAD_REF}" =~ ^(bug-fixes|feature)/ ]]; then
+          GH_TOKEN="${LABEL_TOKEN}" gh api -X PATCH "repos/${REPO}/issues/${NUMBER}" -f 'assignees[]=ipsocode' > /dev/null
+        fi
+        GH_TOKEN="${LABEL_TOKEN}" gh api -X POST "repos/${REPO}/issues/${NUMBER}/labels" -f "labels[]=${label}" > /dev/null
+        GH_TOKEN="${LABEL_TOKEN}" gh api -X POST "repos/${REPO}/issues/${NUMBER}/comments" -f body="${body}" > /dev/null
+        echo "Labelled #${NUMBER} ${label} after ${passes} earlier fix passes."
