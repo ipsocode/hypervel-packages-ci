@@ -1,0 +1,30 @@
+name: Upstream components
+description: Find the hypervel/components commit that Composer installed, from vendor/composer/installed.json.
+outputs:
+  ref:
+    description: The installed commit, empty when installed.json names none.
+    value: ${{ steps.components.outputs.ref }}
+runs:
+  using: composite
+  steps:
+    - name: Find the framework it installed
+      id: components
+      shell: bash
+      run: |
+        # shellcheck disable=SC2016
+        php -r '
+            $installed = json_decode((string) file_get_contents("vendor/composer/installed.json"), true);
+            $ref = "";
+            foreach (is_array($installed) ? ($installed["packages"] ?? $installed) : [] as $package) {
+                if (is_array($package) && ($package["name"] ?? null) === "hypervel/components") {
+                    $ref = (string) ($package["dist"]["reference"] ?? $package["source"]["reference"] ?? "");
+                    break;
+                }
+            }
+            if (preg_match("/^[0-9a-f]{40}\$/", $ref) !== 1) {
+                echo "::notice::vendor/composer/installed.json names no hypervel/components commit.\n";
+                exit(0);
+            }
+            file_put_contents((string) getenv("GITHUB_OUTPUT"), "ref={$ref}\n", FILE_APPEND);
+            echo "It installed hypervel/components {$ref}.\n";
+        '

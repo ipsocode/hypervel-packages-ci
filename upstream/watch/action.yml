@@ -1,0 +1,28 @@
+name: Upstream watch
+description: Read the head of hypervel/components 0.4 and look for an earlier upstream run on it.
+outputs:
+  ref:
+    description: The commit at the head of hypervel/components 0.4.
+    value: ${{ steps.head.outputs.ref }}
+  tested:
+    description: "true when an earlier run already tested that commit."
+    value: ${{ steps.seen.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - name: Read the head of hypervel/components 0.4
+      id: head
+      shell: bash
+      run: |
+        ref=$(git ls-remote https://github.com/hypervel/components refs/heads/0.4 | cut -f1)
+        [[ "${ref}" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::hypervel/components has no 0.4 branch head (${ref:-nothing})."; exit 1; }
+        echo "ref=${ref}" >> "${GITHUB_OUTPUT}"
+        echo "hypervel/components 0.4 is at ${ref}."
+
+    - name: Look for an earlier run on it
+      id: seen
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .upstream-tested
+        key: upstream-tested-${{ steps.head.outputs.ref }}
+        lookup-only: true

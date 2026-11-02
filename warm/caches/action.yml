@@ -1,0 +1,19 @@
+name: Warm caches
+description: Run PHPStan, and optionally php-cs-fixer, after the install action, only to leave their caches in tests/.cache. A failure here fails nothing.
+inputs:
+  style:
+    description: Also run php-cs-fixer in dry-run mode.
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Run PHPStan
+      continue-on-error: true
+      shell: bash
+      run: vendor/bin/phpstan analyse --memory-limit 1G -c phpstan.neon --no-progress
+
+    - name: Check code style
+      if: inputs.style == 'true'
+      continue-on-error: true
+      shell: bash
+      run: vendor/bin/php-cs-fixer fix --dry-run --diff

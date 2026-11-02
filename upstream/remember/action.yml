@@ -1,0 +1,20 @@
+name: Upstream remember
+description: Remember that a hypervel/components commit was tested, so the next run skips it.
+inputs:
+  ref:
+    description: The commit the watch action read.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Remember the commit was tested
+      shell: bash
+      env:
+        REF: ${{ inputs.ref }}
+      run: echo "${REF}" > .upstream-tested
+
+    - name: Save it
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .upstream-tested
+        key: upstream-tested-${{ inputs.ref }}

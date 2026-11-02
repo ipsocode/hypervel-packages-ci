@@ -1,0 +1,54 @@
+name: Upstream report
+description: Open, update or close the issue titled "Nightly components check failed" from the result of the upstream test.
+inputs:
+  result:
+    description: success or failure.
+    required: true
+  ref:
+    description: The hypervel/components commit that was tested.
+    required: true
+  repository:
+    default: ${{ github.repository }}
+  run-url:
+    default: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  token:
+    description: Token with issues write.
+    default: ${{ github.token }}
+runs:
+  using: composite
+  steps:
+    - name: Open, update or close the components issue
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ inputs.repository }}
+        RESULT: ${{ inputs.result }}
+        REF: ${{ inputs.ref }}
+        RUN_URL: ${{ inputs.run-url }}
+      run: |
+        title='Nightly components check failed'
+        number=$(gh api "repos/${REPO}/issues?state=open&per_page=100" \
+          --jq "map(select(.pull_request == null and .title == \"${title}\"))[0].number // empty")
+        if [ "${RESULT}" = success ]; then
+          if [ -n "${number}" ]; then
+            gh api -X POST "repos/${REPO}/issues/${number}/comments" -f body="passes at ${REF} (${RUN_URL})" > /dev/null
+            gh api -X PATCH "repos/${REPO}/issues/${number}" -f state=closed -f state_reason=completed > /dev/null
+            echo "Closed #${number}: main passes at hypervel/components ${REF}."
+          else
+            echo "main passes at hypervel/components ${REF}."
+          fi
+          exit 0
+        fi
+        body="main fails against hypervel/components ${REF}: ${RUN_URL}"
+        if [ -z "${number}" ]; then
+          number=$(gh api -X POST "repos/${REPO}/issues" -f title="${title}" -f body="${body}" -f 'labels[]=bug' --jq .number)
+          echo "::warning::Opened #${number}: ${body}"
+        else
+          last=$(gh api "repos/${REPO}/issues/${number}/comments?per_page=100" --jq 'last.body // ""')
+          if [[ "${last}" == *"${REF}"* ]]; then
+            echo "#${number} already names ${REF}."
+          else
+            gh api -X POST "repos/${REPO}/issues/${number}/comments" -f body="${body}" > /dev/null
+            echo "::warning::Commented on #${number}: ${body}"
+          fi
+        fi

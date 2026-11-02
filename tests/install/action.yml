@@ -4,11 +4,23 @@ inputs:
   php:
     description: The PHP version of the job, such as 8.4. It only keys the caches.
     required: true
+  restore-only:
+    description: Restore Composer's downloads without saving them, and skip the tests/.cache cache. For a run that must not write caches, such as the upstream check.
+    default: 'false'
 runs:
   using: composite
   steps:
     - name: Cache Composer downloads
+      if: inputs.restore-only != 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: /tmp/composer-cache
+        key: composer-${{ inputs.php }}-${{ hashFiles('composer.json') }}
+        restore-keys: composer-${{ inputs.php }}-
+
+    - name: Restore Composer downloads
+      if: inputs.restore-only == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: /tmp/composer-cache
         key: composer-${{ inputs.php }}-${{ hashFiles('composer.json') }}
@@ -25,6 +37,7 @@ runs:
         composer update --prefer-dist --no-interaction --optimize-autoloader
 
     - name: Cache tests/.cache
+      if: inputs.restore-only != 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: tests/.cache
