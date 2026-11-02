@@ -55,8 +55,9 @@ runs:
 
         labelled_since() {
           local label="$1" previous="$2" sha="$3" found='' merge_sha number merged
-          merged=$(gh pr list --repo "${GITHUB_REPOSITORY}" --state merged --base main --label "${label}" \
-                     --limit 200 --json number,mergeCommit --jq '.[] | "\(.mergeCommit.oid) \(.number)"') || {
+          merged=$(gh pr list --repo "${GITHUB_REPOSITORY}" --state merged --base main --limit 200 \
+                     --json number,mergeCommit,labels \
+                     --jq ".[] | select(any(.labels[]; .name == \"${label}\")) | \"\(.mergeCommit.oid) \(.number)\"") || {
             echo "::error::Could not list the merged pull requests labelled ${label}. The token needs pull-requests: read; a version planned without the list could be a patch where a minor is due." >&2
             exit 1
           }
