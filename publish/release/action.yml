@@ -1,0 +1,139 @@
+name: Publish release
+description: Tag the planned commit, write the release notes from the merged pull requests' Release note sections, and publish the release. Check the planned commit out first, with credentials, full history and tags.
+inputs:
+  mode:
+    description: The plan's mode.
+    required: true
+  tag:
+    required: true
+  sha:
+    required: true
+  previous:
+    default: ''
+  highlights:
+    description: Markdown placed above the generated notes. Empty collects the pull requests' Release note sections.
+    default: ''
+  token:
+    default: ${{ github.token }}
+runs:
+  using: composite
+  steps:
+    - name: Tag the commit
+      if: inputs.mode == 'tag-and-release'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        MODE: ${{ inputs.mode }}
+        TAG: ${{ inputs.tag }}
+        SHA: ${{ inputs.sha }}
+        PREVIOUS: ${{ inputs.previous }}
+        ACTOR: ${{ github.actor }}
+        ACTOR_ID: ${{ github.actor_id }}
+      run: |
+        set -euo pipefail
+        git config user.name "${ACTOR}"
+        git config user.email "${ACTOR_ID}+${ACTOR}@users.noreply.github.com"
+        git tag --annotate "${TAG}" "${SHA}" --message "${TAG}"
+        git push origin "refs/tags/${TAG}"
+
+    - name: Write the release notes
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        MODE: ${{ inputs.mode }}
+        TAG: ${{ inputs.tag }}
+        SHA: ${{ inputs.sha }}
+        PREVIOUS: ${{ inputs.previous }}
+        HIGHLIGHTS: ${{ inputs.highlights }}
+      run: |
+        set -euo pipefail
+
+        hypervel_constraint=$(jq -r '.require["hypervel/components"]' composer.json)
+
+        release_note() {
+          awk '/^## / { if (found) exit } /^## Release note[[:space:]]*$/ { found = 1; next } found' \
+            | sed -e 's/\r$//' -e 's/[[:space:]]*$//' \
+            | sed -e '/./,$!d' | sed -e ':a' -e '/^\n*$/{$d;N;ba' -e '}'
+        }
+
+        if [ -z "${HIGHLIGHTS}" ]; then
+          dir=$(mktemp -d)
+          : > "${dir}/0"; : > "${dir}/1"; : > "${dir}/2"
+          while IFS=$'\t' read -r merge_sha number labels; do
+            [ -n "${merge_sha}" ] || continue
+            git cat-file -e "${merge_sha}^{commit}" 2> /dev/null || continue
+            git merge-base --is-ancestor "${merge_sha}" "${SHA}" || continue
+            if [ -n "${PREVIOUS}" ] && git merge-base --is-ancestor "${merge_sha}" "${PREVIOUS}^{commit}"; then
+              continue
+            fi
+            note=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}" --jq '.body // ""' | release_note)
+            plain=$(tr '[:upper:]' '[:lower:]' <<< "${note}" | sed -e 's/^[-* ]*//' -e 's/\.$//')
+            if [ -z "${note}" ] || [ "${plain}" = none ]; then
+              continue
+            fi
+            case ",${labels}," in
+              *,breaking-change,*) rank=0 ;;
+              *,enhancement,*) rank=1 ;;
+              *) rank=2 ;;
+            esac
+            printf '%s\n' "${note}" >> "${dir}/${rank}"
+          done < <(gh pr list --repo "${GITHUB_REPOSITORY}" --state merged --base main --limit 200 \
+                     --json number,mergeCommit,labels --jq '.[] | "\(.mergeCommit.oid)\t\(.number)\t\(.labels | map(.name) | join(","))"')
+          HIGHLIGHTS=$(cat "${dir}/0" "${dir}/1" "${dir}/2")
+        fi
+
+        {
+          echo "Requires \`hypervel/components\` \`${hypervel_constraint}\`, which also sets the PHP version."
+          echo
+          if [ -n "${HIGHLIGHTS}" ]; then
+            printf '%s\n\n' "${HIGHLIGHTS}"
+          fi
+        } > notes.md
+
+        args=(-f "tag_name=${TAG}" -f "target_commitish=${SHA}")
+        if [ -n "${PREVIOUS}" ]; then
+          args+=(-f "previous_tag_name=${PREVIOUS}")
+        fi
+        gh api --method POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" "${args[@]}" --jq .body >> notes.md
+
+        echo "::group::notes.md"; cat notes.md; echo "::endgroup::"
+
+    - name: Publish the release
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        MODE: ${{ inputs.mode }}
+        TAG: ${{ inputs.tag }}
+        SHA: ${{ inputs.sha }}
+        PREVIOUS: ${{ inputs.previous }}
+      run: |
+        set -euo pipefail
+        flags=(--title "${TAG}" --notes-file notes.md --verify-tag)
+        case "${TAG}" in
+          *-*) flags+=(--prerelease) ;;
+        esac
+        gh release create "${TAG}" "${flags[@]}"
+
+    - name: Summarise
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        MODE: ${{ inputs.mode }}
+        TAG: ${{ inputs.tag }}
+        SHA: ${{ inputs.sha }}
+        PREVIOUS: ${{ inputs.previous }}
+      run: |
+        set -euo pipefail
+        package=$(jq -r .name composer.json)
+        url=$(gh release view "${TAG}" --json url --jq .url)
+        {
+          echo "## Released ${TAG}"
+          echo
+          echo "${url}"
+          echo
+          echo "To pick it up in an application:"
+          echo
+          echo '```sh'
+          echo "composer update ${package}"
+          echo '```'
+        } >> "${GITHUB_STEP_SUMMARY}"
