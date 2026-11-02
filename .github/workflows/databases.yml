@@ -2,7 +2,8 @@
 # branch 0.4, at e44bad61bfd91a0f68eacbfdbc9d871f56cbb100, as a reusable workflow for the packages that run
 # their suite against real databases. Compare the two when upstream changes a version, and change it here once.
 # The CI image differs on purpose, and so does the Composer step (a package has no lockfile).
-# The calling package's phpunit.xml sets OTEL_SDK_DISABLED; nothing here does.
+# The calling package's testbench.yaml sets OTEL_SDK_DISABLED: true; nothing here does. phpunit.xml cannot:
+# PHPUnit turns value="true" into "1", which the OpenTelemetry SDK rejects and reads as false.
 name: databases
 
 on:
