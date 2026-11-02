@@ -1,0 +1,8 @@
+name: Conventions
+description: The ipsocode/hypervel-* conventions check, run against the calling repository's checkout.
+runs:
+  using: composite
+  steps:
+    - name: Check the conventions
+      shell: bash
+      run: php "${{ github.action_path }}/conventions.php" "${GITHUB_WORKSPACE}"

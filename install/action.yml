@@ -1,0 +1,33 @@
+name: Install
+description: Install a package's dependencies with Composer, keeping Composer's downloads and the tools' caches (tests/.cache) between runs.
+inputs:
+  php:
+    description: The PHP version of the job, such as 8.4. It only keys the caches.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Cache Composer downloads
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: /tmp/composer-cache
+        key: composer-${{ inputs.php }}-${{ hashFiles('composer.json') }}
+        restore-keys: composer-${{ inputs.php }}-
+
+    - name: Install dependencies
+      shell: bash
+      env:
+        OTEL_SDK_DISABLED: 'true'
+        COMPOSER_CACHE_DIR: /tmp/composer-cache
+        COMPOSER_MEMORY_LIMIT: '-1'
+        COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"}}'
+      run: |
+        git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+        composer update --prefer-dist --no-interaction --optimize-autoloader
+
+    - name: Cache tests/.cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: tests/.cache
+        key: tests-cache-${{ inputs.php }}-${{ hashFiles('composer.json', 'phpstan.neon', 'phpunit.xml', '.php-cs-fixer.dist.php') }}-${{ github.sha }}
+        restore-keys: tests-cache-${{ inputs.php }}-${{ hashFiles('composer.json', 'phpstan.neon', 'phpunit.xml', '.php-cs-fixer.dist.php') }}-
