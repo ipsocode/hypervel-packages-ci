@@ -1,0 +1,103 @@
+name: Feature branch
+description: Create a feature issue's linked feature/<n>-<slug> branch with gh issue develop, and write the Base branch line into the issue body. Does nothing for an issue that already has the line or a branch, or that is a sub-issue.
+inputs:
+  number:
+    description: The issue number.
+    required: true
+  repository:
+    description: The repository, owner/name.
+    default: ${{ github.repository }}
+  token:
+    description: Token with contents and issues write.
+    default: ${{ github.token }}
+outputs:
+  branch:
+    description: The branch, empty when nothing was created.
+    value: ${{ steps.branch.outputs.branch }}
+runs:
+  using: composite
+  steps:
+    - name: Create the linked branch
+      id: branch
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ inputs.repository }}
+        NUMBER: ${{ inputs.number }}
+      run: |
+        set -euo pipefail
+
+        issue=$(gh api "repos/${REPO}/issues/${NUMBER}")
+
+        if jq -e '(.body // "") | test("Base branch: `")' <<< "${issue}" > /dev/null; then
+          echo "#${NUMBER} already names its base branch; nothing to do."
+          exit 0
+        fi
+
+        if gh api "repos/${REPO}/issues/${NUMBER}/parent" > /dev/null 2>&1; then
+          echo "#${NUMBER} is a sub-issue; its parent's branch carries it."
+          exit 0
+        fi
+
+        existing=$(gh api "repos/${REPO}/git/matching-refs/heads/feature/${NUMBER}-" --jq '.[0].ref // empty')
+        if [ -n "${existing}" ]; then
+          echo "#${NUMBER} already has ${existing#refs/heads/}."
+          echo "branch=${existing#refs/heads/}" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+
+        slug=$(jq -r '
+          .title
+          | sub("^\\s*\\[tracking\\]\\s*"; ""; "i")
+          | ascii_downcase
+          | gsub("[^a-z0-9]+"; "-")
+          | gsub("^-+|-+$"; "")
+        ' <<< "${issue}")
+        if [ "${#slug}" -gt 40 ]; then
+          slug="${slug:0:41}"
+          slug="${slug%-*}"
+          slug="${slug:0:40}"
+        fi
+        slug="${slug%-}"
+        slug="${slug:-feature}"
+
+        branch="feature/${NUMBER}-${slug}"
+        if ! gh issue develop "${NUMBER}" --repo "${REPO}" --base main --name "${branch}"; then
+          if ! gh api "repos/${REPO}/git/matching-refs/heads/${branch}" --jq '.[].ref' | grep -qxF "refs/heads/${branch}"; then
+            echo "gh issue develop failed and ${branch} does not exist."
+            exit 1
+          fi
+        fi
+        echo "branch=${branch}" >> "${GITHUB_OUTPUT}"
+        echo "Created ${branch}, linked to #${NUMBER}."
+        echo "Created \`${branch}\`, linked to #${NUMBER}." >> "${GITHUB_STEP_SUMMARY}"
+
+    - name: Write the issue's base-branch line
+      if: steps.branch.outputs.branch != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ inputs.repository }}
+        NUMBER: ${{ inputs.number }}
+        BRANCH: ${{ steps.branch.outputs.branch }}
+      run: |
+        set -euo pipefail
+
+        line="**Base branch: \`${BRANCH}\`.** Commit the work to \`${BRANCH}\`. Its pull request into \`main\` is the only one, and it closes this issue when it merges."
+
+        issue=$(gh api "repos/${REPO}/issues/${NUMBER}")
+        body=$(jq -r '(.body // "") | gsub("\r"; "")' <<< "${issue}")
+
+        new=$(jq -rn --arg body "${body}" --arg line "${line}" '
+          ($body | sub("^\\s+"; "") | sub("\\s+$"; "")) as $old
+          | if $old | test("Base branch: `") then empty else ([$line, $old] | map(select(. != "")) | join("\n\n")) end
+        ')
+
+        if [ -z "${new}" ]; then
+          echo "#${NUMBER}'s body already has its base-branch line."
+          exit 0
+        fi
+
+        gh api -X PATCH "repos/${REPO}/issues/${NUMBER}" -f body="${new}" > /dev/null
+        echo "Wrote #${NUMBER}'s base-branch line."
+        echo "Wrote #${NUMBER}'s base-branch line." >> "${GITHUB_STEP_SUMMARY}"
