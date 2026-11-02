@@ -17,7 +17,6 @@ runs:
     - name: Install dependencies
       shell: bash
       env:
-        OTEL_SDK_DISABLED: 'true'
         COMPOSER_CACHE_DIR: /tmp/composer-cache
         COMPOSER_MEMORY_LIMIT: '-1'
         COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"}}'
