@@ -33,7 +33,7 @@ runs:
         hypervel_constraint=$(jq -r '.require["hypervel/components"]' composer.json)
 
         release_note() {
-          awk '/^## / { if (found) exit } /^## Release note[[:space:]]*$/ { found = 1; next } found' \
+          awk '/^(## |---[[:space:]]*$)/ { if (found) exit } /^## Release note[[:space:]]*$/ { found = 1; next } found' \
             | sed -e 's/\r$//' -e 's/[[:space:]]*$//' \
             | sed -e '/./,$!d' | sed -e ':a' -e '/^\n*$/{$d;N;ba' -e '}'
         }
